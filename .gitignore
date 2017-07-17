@@ -1,0 +1,6 @@
+pants.d
+dist
+.cache
+.pids
+.pants.workdir.file_lock
+.pants.d
