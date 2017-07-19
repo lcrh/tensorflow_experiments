@@ -1,8 +1,16 @@
 """Build a binary classifier that learns an XOR using tensorflow."""
 
-import matplotlib.pyplot as plot
+import argparse
+
+try:
+    import matplotlib.pyplot as plot
+except ImportError:
+    pass
+
 import numpy as np
 import tensorflow as tf
+
+sm = tf.saved_model
 
 def get_training_data():
     """Generate training data."""
@@ -56,8 +64,18 @@ def prediction_heat_map(sess, input_ph, output_op, grid_resolution):
     plot.imshow(predictions.transpose(), extent=[-1, 1, -1, 1],
                 interpolation="bicubic")
 
+def get_parser():
+    """Return argument parser."""
+    parser = argparse.ArgumentParser(
+        description="Train a simple XOR classifier.")
+    parser.add_argument("--job-dir", type=str,
+                        help="Google cloud job dir")
+    return parser
+
 def main():
     """Train a simple deep NN to recognize XORs."""
+    args = get_parser().parse_args()
+
     training_data = get_training_data()
     inp, target, output, loss = get_graph([4, 2])
     opt = tf.train.GradientDescentOptimizer(learning_rate=0.1)
@@ -84,12 +102,29 @@ def main():
             for datum in training_data:
                 opt_op.run(to_feed_dict(datum))
 
-        prediction_heat_map(sess, inp, output, 32)
-        plot.scatter(
-            [datum[0] for datum in training_data],
-            [datum[1] for datum in training_data],
-            c=[datum[2] for datum in training_data])
-        plot.show()
+        try:
+            prediction_heat_map(sess, inp, output, 32)
+            plot.scatter(
+                [datum[0] for datum in training_data],
+                [datum[1] for datum in training_data], c=[datum[2] for datum in training_data])
+            plot.show()
+        except NameError:
+            print("No matplotlib. Skipping plot.")
+
+        if args.job_dir:
+            print("Writing model to path %s" % args.job_dir)
+            builder = sm.builder.SavedModelBuilder(args.job_dir)
+            sig_def_map = {
+                "serving_default": sm.signature_def_utils.build_signature_def(
+                    inputs={
+                        "input": sm.utils.build_tensor_info(inp)},
+                    outputs={
+                        "output": sm.utils.build_tensor_info(output)})}
+            builder.add_meta_graph_and_variables(
+                sess,
+                [sm.tag_constants.TRAINING],
+                signature_def_map=sig_def_map)
+            builder.save()
 
 if __name__ == "__main__":
     main()
