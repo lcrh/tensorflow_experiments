@@ -156,7 +156,6 @@ def crossentropy_loss(prediction, actual):
             (1 - actual) * safe_log(1 - prediction))
     return loss
 
-
 def unroll_lstm(depth, init_lstm_state, init_lstm_output, params):
     """Returns (input_frames, target_frames, loss)."""
     lstm_state, lstm_output = init_lstm_state, init_lstm_output

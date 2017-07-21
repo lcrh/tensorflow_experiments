@@ -27,12 +27,3 @@ python_binary(
       "//3rdparty/python:tensorflow",
     ],
 )
-
-python_binary(
-    name = "check",
-    source = "check.py",
-    dependencies = [
-      "//3rdparty/python:numpy",
-      "//3rdparty/python:tensorflow",
-    ],
-)
