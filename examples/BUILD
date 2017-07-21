@@ -17,3 +17,22 @@ python_binary(
       "//3rdparty/python:tensorflow",
     ],
 )
+
+python_binary(
+    name = "learn_lstm",
+    source = "learn_lstm.py",
+    dependencies = [
+      "//3rdparty/python:matplotlib",
+      "//3rdparty/python:numpy",
+      "//3rdparty/python:tensorflow",
+    ],
+)
+
+python_binary(
+    name = "check",
+    source = "check.py",
+    dependencies = [
+      "//3rdparty/python:numpy",
+      "//3rdparty/python:tensorflow",
+    ],
+)
