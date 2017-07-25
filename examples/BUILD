@@ -27,3 +27,15 @@ python_binary(
       "//3rdparty/python:tensorflow",
     ],
 )
+
+python_binary(
+    name = "learn_txt",
+    source = "learn_txt.py",
+    dependencies = [
+      "//3rdparty/python:matplotlib",
+      "//3rdparty/python:numpy",
+      "//3rdparty/python:tensorflow",
+    ],
+)
+
+
