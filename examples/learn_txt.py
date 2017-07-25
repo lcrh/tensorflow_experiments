@@ -3,6 +3,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import argparse
 import math
 import os.path
 import urllib2
@@ -11,20 +12,30 @@ import numpy as np
 import tensorflow as tf
 
 _TXT_URL = "http://www.gutenberg.org/cache/epub/10/pg10.txt"
-_TMP_LOC = "/tmp/pg10.txt"
 _LOG_DIR = "/tmp/train_log"
 
-_N_STATES = 1024
+_N_STATES = 512
+
+def get_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+            "source", metavar="URL", type=str,
+            help="Input text location, e.g., %s" % _TXT_URL,
+            default=_TXT_URL)
+    return parser
+
+FLAGS = get_parser().parse_args()
 
 def get_txt():
-    if os.path.isfile(_TMP_LOC):
-        print("Using cached file: " + _TMP_LOC)
-        return open(_TMP_LOC, 'r').read()
-    else:
-        print("Downloading file from " + _TXT_URL)
+    source = FLAGS.source
+    if source.startswith("http"):
+        print("Downloading file from " + source)
         text = urllib2.urlopen(_TXT_URL).read()
         open(_TMP_LOC, 'w').write(text)
         return text
+    else:
+        print("Using local file: " + source)
+        return open(source, 'r').read()
 
 def get_training_data():
     return np.array([ord(c) for c in get_txt()])
@@ -89,6 +100,8 @@ class SequencePredictor(tf.contrib.rnn.RNNCell):
                 processed_input, state, scope)
             processed_output = self._output_postprocess(
                 processed_input, lstm_out)
+            processed_output = tf.layers.dropout(
+                lstm_out, 0.4, is_training())
             logits = self._prediction_logits(processed_output)
             return (logits, lstm_state)
 
@@ -106,7 +119,7 @@ class SequencePredictor(tf.contrib.rnn.RNNCell):
     def _input_preprocess(self, onehot_input):
         """Creates an NN to process a batched input for the LSTM."""
         return batch_dropout_net(
-                onehot_input, [1024, 512], 0.1,
+                onehot_input, [256, 256, 256], 0.4,
                 tf.nn.relu, "input_preproc")
 
     def _output_postprocess(self, inputs_onehot, lstm_output):
@@ -244,7 +257,7 @@ def train(data, batch_size, unroll_depth):
 
     opt = tf.train.RMSPropOptimizer(learning_rate)
             
-    opt_op = opt.minimize(loss)
+    opt_op = opt.minimize(loss / unroll_depth)
 
     print_loss = tf.Print(
         loss, [loss], "Loss: ")
@@ -265,7 +278,7 @@ def train(data, batch_size, unroll_depth):
             # Do some prediction:
             generated = []
             sess.run(reset_predictor)
-            for i in xrange(500):
+            for i in xrange(1000):
                 next_char = sess.run(predict_next)
                 generated.append(chr(next_char[0, 0]))
             print("========")
@@ -283,7 +296,7 @@ def train(data, batch_size, unroll_depth):
 def main():
     data = get_training_data()
     batch_size = 200
-    unroll_depth = 200
+    unroll_depth = 400
     train(data, batch_size, unroll_depth)
 
 if __name__ == "__main__":
