@@ -14,7 +14,7 @@ import tensorflow as tf
 _TXT_URL = "http://www.gutenberg.org/cache/epub/10/pg10.txt"
 _LOG_DIR = "/tmp/train_log"
 
-_N_STATES = 512
+_N_STATES = 256
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -41,7 +41,27 @@ def get_training_data():
     return np.array([ord(c) for c in get_txt()])
 
 def create_lstm():
-    return tf.contrib.rnn.BasicLSTMCell(_N_STATES)
+    return tf.contrib.rnn.MultiRNNCell([
+        tf.contrib.rnn.DropoutWrapper(
+            tf.contrib.rnn.BasicLSTMCell(_N_STATES),
+            state_keep_prob=0.95),
+        tf.contrib.rnn.DropoutWrapper(
+            tf.contrib.rnn.BasicLSTMCell(_N_STATES),
+            state_keep_prob=0.95)])
+
+def get_state_var(lstm, name):
+    zero = tf.convert_to_tensor(
+        lstm.zero_state(
+            1, dtype=tf.float32))
+    return tf.get_variable(name, zero.get_shape(), dtype=tf.float32)
+
+def tensor_to_state_tuple(tensor):
+    if len(tensor.get_shape()) <= 2:
+        return tensor # Innermost tensors are preserverd
+    # Outer tensor converted to tuples.
+    return tuple(
+        tensor_to_state_tuple(tensor[i])
+        for i in xrange(tensor.get_shape()[0]))
 
 _training = tf.get_variable("training", tuple(), tf.bool)
 _set_training = tf.assign(_training, True)
@@ -144,24 +164,10 @@ def training_graph(seq_pred, input_batches, batch_size, unroll_depth):
     input_char_list = [
         input_characters[i] for i in xrange(unroll_depth)]
 
-    init_states = (
-        tf.get_variable("init_state",
-                        (_N_STATES,),
-                        dtype=tf.float32),
-        tf.get_variable("init_out", 
-                        (_N_STATES,),
-                        dtype=tf.float32))
-
-    # Use same initial state in each batch.
-    batch_init_states = (
-        tf.stack([init_states[0]] * batch_size),
-        tf.stack([init_states[1]] * batch_size))
-
     out_logits, state = tf.nn.static_rnn(
         seq_pred,
         input_char_list,
-        dtype=tf.float32,
-        initial_state=batch_init_states)
+        dtype=tf.float32)
 
     target_characters = input_characters
     target_onehot = tf.reshape(
@@ -172,36 +178,32 @@ def training_graph(seq_pred, input_batches, batch_size, unroll_depth):
         labels=target_onehot[1:], logits=out_logits[:-1])
 
     total_loss = tf.reduce_sum(losses)
-    return init_states, input_characters, total_loss
+    return input_characters, total_loss
 
-def gen_sequence(seq_pred, init_states):
+def gen_sequence(seq_pred):
     """Returns operations for sequence generation:
         (reset_state, predict_next, probabilities)"""
     pred_in = tf.get_variable("pred_input", (1, 1), dtype=tf.uint8)
-    
-    init_state, init_out = init_states
 
-    l_state = tf.get_variable(
-        "lstm_state",
-        (_N_STATES,),
-        dtype=tf.float32)
-    l_out = tf.get_variable(
-        "lstm_output",
-        (_N_STATES,),
-        dtype=tf.float32)
+    l_state = get_state_var(seq_pred, "pred_rnn_state")
 
-    reset_state = tf.assign(l_state, init_state)
-    reset_out = tf.assign(l_out, init_out)
+    reset_state = tf.assign(
+        l_state, 
+        tf.convert_to_tensor(
+            seq_pred.zero_state(1, dtype=tf.float32)))
+
     reset_pred = tf.assign(
             pred_in, tf.reshape(tf.cast(ord("\n"), tf.uint8), (1, 1)))
     reset = tf.group(
         reset_state,
-        reset_out,
         reset_pred)
 
+    l_state_tuple = tensor_to_state_tuple(l_state)
+    print(l_state_tuple)
+    print(seq_pred.zero_state(1, dtype=tf.float32))
     out_logits, state = seq_pred(
-        tf.reshape(pred_in, (1, 1, 1)),
-        (tf.stack([l_state]), tf.stack([l_out])))
+        tf.reshape(pred_in, (1, 1, 1)), l_state_tuple)
+        
 
     predictions = tf.nn.softmax(out_logits)[0]
 
@@ -212,9 +214,7 @@ def gen_sequence(seq_pred, init_states):
     next_prediction = tf.reshape(
         tf.cast(selection, dtype=tf.uint8), (1, 1))
 
-    update_state = tf.group(
-        tf.assign(l_state, tf.reshape(state[0], l_state.shape)),
-        tf.assign(l_out, tf.reshape(state[1], l_out.shape)))
+    update_state = tf.assign(l_state, tf.reshape(state, l_state.shape))
 
     pick_next = tf.tuple(
         [tf.assign(pred_in, next_prediction)],
@@ -241,14 +241,13 @@ def train(data, batch_size, unroll_depth):
         capacity=50000, min_after_dequeue=40000)
     
     # set up graph for training
-    init_states, inputs, loss = training_graph(
+    inputs, loss = training_graph(
         seq_pred, next_batch, batch_size, unroll_depth)
 
     # set up sequence prediction
     with tf.variable_scope("rnn"):
         print("Creating predictor")
-        reset_predictor, predict_next = gen_sequence(
-            seq_pred, init_states)
+        reset_predictor, predict_next = gen_sequence(seq_pred)
 
     global_step = tf.train.create_global_step()
 
@@ -295,8 +294,8 @@ def train(data, batch_size, unroll_depth):
 
 def main():
     data = get_training_data()
-    batch_size = 200
-    unroll_depth = 400
+    batch_size = 100
+    unroll_depth = 200
     train(data, batch_size, unroll_depth)
 
 if __name__ == "__main__":
