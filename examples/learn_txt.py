@@ -31,7 +31,6 @@ def get_txt():
     if source.startswith("http"):
         print("Downloading file from " + source)
         text = urllib2.urlopen(_TXT_URL).read()
-        open(_TMP_LOC, 'w').write(text)
         return text
     else:
         print("Using local file: " + source)
