@@ -14,7 +14,7 @@ import tensorflow as tf
 _TXT_URL = "http://www.gutenberg.org/cache/epub/10/pg10.txt"
 _LOG_DIR = "/tmp/train_log"
 
-_N_STATES = 256
+_N_STATES = 1024 + 256
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -40,13 +40,9 @@ def get_training_data():
     return np.array([ord(c) for c in get_txt()])
 
 def create_lstm():
-    return tf.contrib.rnn.MultiRNNCell([
-        tf.contrib.rnn.DropoutWrapper(
-            tf.contrib.rnn.BasicLSTMCell(_N_STATES),
-            state_keep_prob=0.95),
-        tf.contrib.rnn.DropoutWrapper(
-            tf.contrib.rnn.BasicLSTMCell(_N_STATES),
-            state_keep_prob=0.95)])
+    return tf.contrib.rnn.DropoutWrapper(
+        tf.contrib.rnn.BasicLSTMCell(_N_STATES),
+        state_keep_prob=0.95)
 
 def get_state_var(lstm, name):
     zero = tf.convert_to_tensor(
@@ -138,7 +134,7 @@ class SequencePredictor(tf.contrib.rnn.RNNCell):
     def _input_preprocess(self, onehot_input):
         """Creates an NN to process a batched input for the LSTM."""
         return batch_dropout_net(
-                onehot_input, [256, 256, 256], 0.4,
+                onehot_input, [512, 512], 0.1,
                 tf.nn.relu, "input_preproc")
 
     def _output_postprocess(self, inputs_onehot, lstm_output):
@@ -176,7 +172,7 @@ def training_graph(seq_pred, input_batches, batch_size, unroll_depth):
     losses = tf.nn.softmax_cross_entropy_with_logits(
         labels=target_onehot[1:], logits=out_logits[:-1])
 
-    total_loss = tf.reduce_sum(losses)
+    total_loss = tf.reduce_mean(losses)
     return input_characters, total_loss
 
 def gen_sequence(seq_pred):
@@ -232,12 +228,12 @@ def train(data, batch_size, unroll_depth):
 
     input_text = tf.constant(data, dtype=tf.uint8)
     sequences = tf.train.batch([input_text], batch_size=unroll_depth,
-                               capacity=50000,
+                               capacity=1000,
                                enqueue_many=True)
 
     next_batch = tf.train.shuffle_batch(
         [sequences], batch_size=batch_size,
-        capacity=50000, min_after_dequeue=40000)
+        capacity=1000, min_after_dequeue=600)
     
     # set up graph for training
     inputs, loss = training_graph(
@@ -274,14 +270,15 @@ def train(data, batch_size, unroll_depth):
         while not sv.should_stop():
             print('global_step: %s' % tf.train.global_step(sess, global_step))
             # Do some prediction:
-            generated = []
-            sess.run(reset_predictor)
-            for i in xrange(1000):
-                next_char = sess.run(predict_next)
-                generated.append(chr(next_char[0, 0]))
-            print("========")
-            print(">>" + "".join(generated) + "<<")
-            print("========")
+            if sess.run(global_step) % 100 == 0:
+                generated = []
+                sess.run(reset_predictor)
+                for i in xrange(5000):
+                    next_char = sess.run(predict_next)
+                    generated.append(chr(next_char[0, 0]))
+                print("========")
+                print(">>" + "".join(generated) + "<<")
+                print("========")
 
             sess.run(set_training)
             sess.run(opt_op)
@@ -293,7 +290,7 @@ def train(data, batch_size, unroll_depth):
 
 def main():
     data = get_training_data()
-    batch_size = 100
+    batch_size = 20
     unroll_depth = 200
     train(data, batch_size, unroll_depth)
 
