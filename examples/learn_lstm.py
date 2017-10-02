@@ -8,7 +8,7 @@ import tensorflow as tf
 _MAX_INPUT = 9
 
 def get_training_data():
-    """Count up modulo ten with a 0 at position 4."""
+    """Count up modulo ten with a 0 every third step."""
     data_length = 50
     num_examples = 18
     training_data = [
